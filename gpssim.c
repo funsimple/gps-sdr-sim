@@ -1,3 +1,7 @@
+/*
+* Ready for Array Signal Generation
+*/
+
 #define _CRT_SECURE_NO_DEPRECATE
 
 #include <stdio.h>
@@ -2066,7 +2070,7 @@ int main(int argc, char *argv[])
 	////////////////////////////////////////////////////////////
 
 	// Allocate I/Q buffer
-	iq_buff = calloc(2*iq_buff_size, 2);
+	iq_buff = calloc(iq_buff_size, sizeof(short));
 
 	if (iq_buff==NULL)
 	{
@@ -2076,7 +2080,7 @@ int main(int argc, char *argv[])
 
 	if (data_format==SC08)
 	{
-		iq8_buff = calloc(2*iq_buff_size, 1);
+		iq8_buff = calloc(iq_buff_size, 1);
 		if (iq8_buff==NULL)
 		{
 			fprintf(stderr, "ERROR: Faild to allocate 8-bit I/Q buffer.\n");
@@ -2085,7 +2089,7 @@ int main(int argc, char *argv[])
 	}
 	else if (data_format==SC01)
 	{
-		iq8_buff = calloc(iq_buff_size/4, 1); // byte = {I0, Q0, I1, Q1, I2, Q2, I3, Q3}
+		iq8_buff = calloc(iq_buff_size/8, 1); // byte = {I0, Q0, I1, Q1, I2, Q2, I3, Q3}
 		if (iq8_buff==NULL)
 		{
 			fprintf(stderr, "ERROR: Faild to allocate compressed 1-bit I/Q buffer.\n");
@@ -2253,14 +2257,14 @@ int main(int argc, char *argv[])
 			i_acc = (i_acc+64)>>7;
 			q_acc = (q_acc+64)>>7;
 
-			// Store I/Q samples into buffer
-			iq_buff[isamp*2] = (short)i_acc;
-			iq_buff[isamp*2+1] = (short)q_acc;
+			// I samples only
+
+			iq_buff[isamp] = (short)i_acc;
 		}
 
 		if (data_format==SC01)
 		{
-			for (isamp=0; isamp<2*iq_buff_size; isamp++)
+			for (isamp=0; isamp<iq_buff_size; isamp++)
 			{
 				if (isamp%8==0)
 					iq8_buff[isamp/8] = 0x00;
@@ -2268,18 +2272,18 @@ int main(int argc, char *argv[])
 				iq8_buff[isamp/8] |= (iq_buff[isamp]>0?0x01:0x00)<<(7-isamp%8);
 			}
 
-			fwrite(iq8_buff, 1, iq_buff_size/4, fp);
+			fwrite(iq8_buff, 1, iq_buff_size/8, fp);
 		}
 		else if (data_format==SC08)
 		{
-			for (isamp=0; isamp<2*iq_buff_size; isamp++)
+			for (isamp=0; isamp<iq_buff_size; isamp++)
 				iq8_buff[isamp] = iq_buff[isamp]>>4; // 12-bit bladeRF -> 8-bit HackRF
 
-			fwrite(iq8_buff, 1, 2*iq_buff_size, fp);
+			fwrite(iq8_buff, 1, iq_buff_size, fp);
 		} 
 		else // data_format==SC16
 		{
-			fwrite(iq_buff, 2, 2*iq_buff_size, fp);
+			fwrite(iq_buff, 2, iq_buff_size, fp);
 		}
 
 		//
