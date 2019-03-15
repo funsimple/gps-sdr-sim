@@ -836,7 +836,7 @@ int readRinexNavAll(ephem_t eph[][MAX_SAT], ionoutc_t *ionoutc, const char *fnam
 	int flags = 0x0;
 
 	if (NULL==(fp=fopen(fname, "rt")))
-		return(-1);
+		return(-1);	
 
 	// Clear valid flag
 	for (ieph=0; ieph<EPHEM_ARRAY_SIZE; ieph++)
@@ -1307,8 +1307,8 @@ void computeRange(range_t *rho, ephem_t eph, ionoutc_t *ionoutc, gpstime_t g, do
 	neu2azel(rho->azel, neu);
 
 	// Add ionospheric delay
-	rho->iono_delay = ionosphericDelay(ionoutc, g, llh, rho->azel);
-	rho->range += rho->iono_delay;
+	//rho->iono_delay = ionosphericDelay(ionoutc, g, llh, rho->azel);
+	//rho->range += rho->iono_delay;
 
 	return;
 }
@@ -1328,8 +1328,9 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	rhorate = (rho1.range - chan->rho0.range)/dt;
 
 	// Carrier and code frequency.
-	chan->f_carr = -rhorate/LAMBDA_L1;
+	chan->f_carr = -rhorate / LAMBDA_L1;
 	chan->f_code = CODE_FREQ + chan->f_carr*CARR_TO_CODE;
+	//chan->f_carr += 45.42e6;
 
 	// Initial code phase and data bit counters.
 	ms = ((subGpsTime(chan->rho0.g,chan->g0)+6.0) - chan->rho0.range/SPEED_OF_LIGHT)*1000.0;
@@ -1678,6 +1679,8 @@ int main(int argc, char *argv[])
 	clock_t tstart,tend;
 
 	FILE *fp;
+
+	FILE *fpPrn[MAX_CHAN];
 
 	int sv;
 	int neph,ieph;
@@ -2070,7 +2073,7 @@ int main(int argc, char *argv[])
 	////////////////////////////////////////////////////////////
 
 	// Allocate I/Q buffer
-	iq_buff = calloc(iq_buff_size, sizeof(short));
+	iq_buff = calloc(2*iq_buff_size, sizeof(short));
 
 	if (iq_buff==NULL)
 	{
@@ -2080,7 +2083,7 @@ int main(int argc, char *argv[])
 
 	if (data_format==SC08)
 	{
-		iq8_buff = calloc(iq_buff_size, 1);
+		iq8_buff = calloc(2*iq_buff_size, 1);
 		if (iq8_buff==NULL)
 		{
 			fprintf(stderr, "ERROR: Faild to allocate 8-bit I/Q buffer.\n");
@@ -2089,7 +2092,7 @@ int main(int argc, char *argv[])
 	}
 	else if (data_format==SC01)
 	{
-		iq8_buff = calloc(iq_buff_size/8, 1); // byte = {I0, Q0, I1, Q1, I2, Q2, I3, Q3}
+		iq8_buff = calloc(iq_buff_size/4, 1); // byte = {I0, Q0, I1, Q1, I2, Q2, I3, Q3}
 		if (iq8_buff==NULL)
 		{
 			fprintf(stderr, "ERROR: Faild to allocate compressed 1-bit I/Q buffer.\n");
@@ -2109,6 +2112,19 @@ int main(int argc, char *argv[])
 		fp = stdout;
 	}
 
+
+	for (int fpCnt = 0; fpCnt < MAX_CHAR; fpCnt++)
+	{
+		char fpPrnName[10];
+		strcpy(fpPrnName, "prnxx.txt");		
+		fpPrnName[3] = (char)(fpCnt / 10 + 48);
+		fpPrnName[4] = (char)(fpCnt % 10 + 48);
+		if(NULL == (fpPrn[fpCnt] = fopen(fpPrnName, "wb")))
+		{
+			fprintf(stderr, "ERROR: Failed to open output file.\n");
+			exit(1);
+		}
+	}
 	////////////////////////////////////////////////////////////
 	// Initialize channels
 	////////////////////////////////////////////////////////////
@@ -2200,10 +2216,16 @@ int main(int argc, char *argv[])
 #else
 					iTable = (chan[i].carr_phase >> 16) & 0x1ff; // 9-bit index
 #endif
-					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable] * gain[i];
-					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable] * gain[i];
+					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable];// *gain[i];
+					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable];// *gain[i];
 
-					// Accumulate for all visible satellites
+					// 单卫星信号输出
+					char cip = (char)ip;
+					char cqp = (char)qp;
+					fwrite(&cip, 1, 1, fpPrn[i]);
+					fwrite(&cqp, 1, 1, fpPrn[i]);
+
+					// Accumulate for all visible satellites					
 					i_acc += ip;
 					q_acc += qp;
 
@@ -2243,9 +2265,10 @@ int main(int argc, char *argv[])
 #ifdef FLOAT_CARR_PHASE
 					chan[i].carr_phase += chan[i].f_carr * delt;
 
-					if (chan[i].carr_phase >= 1.0)
+					// 仅取小数部分，0~1，后续修改成模
+					while (chan[i].carr_phase >= 1.0)
 						chan[i].carr_phase -= 1.0;
-					else if (chan[i].carr_phase<0.0)
+					while (chan[i].carr_phase<0.0)
 						chan[i].carr_phase += 1.0;
 #else
 					chan[i].carr_phase += chan[i].carr_phasestep;
@@ -2259,12 +2282,13 @@ int main(int argc, char *argv[])
 
 			// I samples only
 
-			iq_buff[isamp] = (short)i_acc;
+			iq_buff[isamp*2] = (short)i_acc;
+			iq_buff[isamp*2+1] = (short)q_acc;
 		}
 
 		if (data_format==SC01)
 		{
-			for (isamp=0; isamp<iq_buff_size; isamp++)
+			for (isamp=0; isamp<2*iq_buff_size; isamp++)
 			{
 				if (isamp%8==0)
 					iq8_buff[isamp/8] = 0x00;
@@ -2272,18 +2296,18 @@ int main(int argc, char *argv[])
 				iq8_buff[isamp/8] |= (iq_buff[isamp]>0?0x01:0x00)<<(7-isamp%8);
 			}
 
-			fwrite(iq8_buff, 1, iq_buff_size/8, fp);
+			fwrite(iq8_buff, 1, iq_buff_size/4, fp);
 		}
 		else if (data_format==SC08)
 		{
-			for (isamp=0; isamp<iq_buff_size; isamp++)
-				iq8_buff[isamp] = iq_buff[isamp]>>4; // 12-bit bladeRF -> 8-bit HackRF
+			for (isamp=0; isamp<2*iq_buff_size; isamp++)
+				iq8_buff[isamp] = iq_buff[isamp]; // 12-bit bladeRF -> 8-bit HackRF
 
-			fwrite(iq8_buff, 1, iq_buff_size, fp);
+			fwrite(iq8_buff, 1, 2*iq_buff_size, fp);
 		} 
 		else // data_format==SC16
 		{
-			fwrite(iq_buff, 2, iq_buff_size, fp);
+			fwrite(iq_buff, 2, 2*iq_buff_size, fp);
 		}
 
 		//
@@ -2360,6 +2384,11 @@ int main(int argc, char *argv[])
 
 	// Close file
 	fclose(fp);
+
+	for (int fpCnt = 0; fpCnt < MAX_CHAN; fpCnt++)
+	{
+		fclose(fpPrn[fpCnt]);
+	}
 
 	// Process time
 	fprintf(stderr, "Process time = %.1f [sec]\n", (double)(tend-tstart)/CLOCKS_PER_SEC);
