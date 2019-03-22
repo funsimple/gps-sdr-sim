@@ -80,6 +80,10 @@
 
 #define EPHEM_ARRAY_SIZE (13) // for daily GPS broadcast ephemers file (brdc)
 
+// FARROW FILTER
+#define FARROW_N	11
+#define FARROW_P	11
+
 /*! \brief Structure representing GPS time */
 typedef struct
 {
@@ -181,5 +185,12 @@ typedef struct
 	double azel[2];
 	range_t rho0;
 } channel_t;
+
+
+void filter(double *b, int len, double *x, double*y);
+void farrowFilter(double delay, int len, double *x, double *delaySignal);
+
+double farrowCoefficients[FARROW_N][FARROW_P];
+
 
 #endif
