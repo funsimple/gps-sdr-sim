@@ -111,6 +111,9 @@ double farrowCoefficients[FARROW_N][FARROW_P] = {
 {				   0,                   0,                   0,  -0.000041335978842,   0.000075231481410,   0.000376157407544,  -0.000225970016967,  -0.001129850088303,   0.000158730160024,   0.000793650801281,  0, }
 };
 
+// 存储上1ms的卫星数据
+double last1msBuff[MAX_SAT][PRE_SAMPLES];
+
 int allocatedSat[MAX_SAT];
 
 /*! \brief Subtract two vectors of double
@@ -1324,7 +1327,7 @@ void computeRange(range_t *rho, ephem_t eph, ionoutc_t *ionoutc, gpstime_t g, do
 	neu2azel(rho->azel, neu);
 
 	// Add ionospheric delay
-	//rho->iono_delay = ionosphericDelay(ionoutc, g, llh, rho->azel);
+	rho->iono_delay = ionosphericDelay(ionoutc, g, llh, rho->azel);
 	//rho->range += rho->iono_delay;
 
 	return;
@@ -1729,7 +1732,7 @@ void farrowFilter(double delay, int len, double *x, double *delaySignal)
 	double b[FARROW_N] = { 0 };
 
 	double *y = (double*)malloc(sizeof(double) * len);
-
+	memset(delaySignal, 0, sizeof(double) * len);
 	for (int i = 0; i < FARROW_P; i++)
 	{
 		for (int j = 0; j < FARROW_N; j++)
@@ -1743,6 +1746,8 @@ void farrowFilter(double delay, int len, double *x, double *delaySignal)
 			delaySignal[j] = delay * delaySignal[j] + y[j];
 		}
 	}
+	free(y);
+	y = NULL;
 }
 
 
@@ -1755,7 +1760,7 @@ int main(int argc, char *argv[])
 
 	FILE *fp;
 
-	FILE *fpPrn[MAX_CHAN];
+	//FILE *fpPrn[MAX_CHAN];
 
 	int sv;
 	int neph,ieph;
@@ -1764,7 +1769,7 @@ int main(int argc, char *argv[])
 	
 	double llh[3];
 	
-	int i;
+	int i, j;
 	channel_t chan[MAX_CHAN];
 	double elvmask = 0.0; // in degree
 
@@ -2150,6 +2155,40 @@ int main(int argc, char *argv[])
 	// Allocate I/Q buffer
 	iq_buff = calloc(2*iq_buff_size, sizeof(short));
 
+	// 每颗卫星的每100ms的数据buffer
+	int satBuffSize = iq_buff_size + 2 * PRE_SAMPLES;
+	double *iSatBuff = NULL;
+	double *qSatBuff = NULL;
+	iSatBuff = calloc(MAX_CHAN * satBuffSize, sizeof(double));
+	qSatBuff = calloc(MAX_CHAN * satBuffSize, sizeof(double));
+	double *iSatBuffOut = NULL;
+	double *qSatBuffOut = NULL;
+	iSatBuffOut = calloc(MAX_CHAN * satBuffSize, sizeof(double));
+	qSatBuffOut = calloc(MAX_CHAN * satBuffSize, sizeof(double));
+	int *iAntBuff = NULL;
+	int *qAntBuff = NULL;
+	iAntBuff = calloc(iq_buff_size, sizeof(int));
+	qAntBuff = calloc(iq_buff_size, sizeof(int));
+	short *iqAntbuff = NULL;
+	iqAntbuff = calloc(2 * iq_buff_size, sizeof(short));
+
+	double delay = 0;
+
+	//存储ant2的文件
+	FILE *fpAnt2;
+
+	if (strcmp("-", "ant2.txt")) {
+		if (NULL == (fpAnt2 = fopen("ant2.txt", "wb")))
+		{
+			fprintf(stderr, "ERROR: Failed to open output file.\n");
+			exit(1);
+		}
+	}
+	else {
+		fpAnt2 = stdout;
+	}
+	
+
 	if (iq_buff==NULL)
 	{
 		fprintf(stderr, "ERROR: Faild to allocate 16-bit I/Q buffer.\n");
@@ -2186,11 +2225,10 @@ int main(int argc, char *argv[])
 	}else{
 		fp = stdout;
 	}
-
-
-	for (int fpCnt = 0; fpCnt < MAX_CHAR; fpCnt++)
-	{
-		char fpPrnName[10];
+	/*
+	char fpPrnName[10];
+	for (int fpCnt = 0; fpCnt < MAX_CHAN; fpCnt++)
+	{		
 		strcpy(fpPrnName, "prnxx.txt");		
 		fpPrnName[3] = (char)(fpCnt / 10 + 48);
 		fpPrnName[4] = (char)(fpCnt % 10 + 48);
@@ -2199,7 +2237,7 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "ERROR: Failed to open output file.\n");
 			exit(1);
 		}
-	}
+	}*/
 	////////////////////////////////////////////////////////////
 	// Initialize channels
 	////////////////////////////////////////////////////////////
@@ -2243,6 +2281,8 @@ int main(int argc, char *argv[])
 
 	for (iumd=1; iumd<numd; iumd++)
 	{
+
+
 		for (i=0; i<MAX_CHAN; i++)
 		{
 			if (chan[i].prn>0)
@@ -2277,6 +2317,18 @@ int main(int argc, char *argv[])
 			}
 		}
 
+		// 将上1ms的最后2 * PRE_SAMPLES个采样点移至最左边
+		for (i = 0; i < MAX_CHAN; i++)
+		{
+			for (j = 0; j < 2 * PRE_SAMPLES; j++)
+			{
+				iSatBuff[i * satBuffSize + j] = iSatBuff[i * satBuffSize + j + iq_buff_size];
+				qSatBuff[i * satBuffSize + j] = qSatBuff[i * satBuffSize + j + iq_buff_size];
+			}
+		}
+
+
+
 		for (isamp=0; isamp<iq_buff_size; isamp++)
 		{
 			int i_acc = 0;
@@ -2295,10 +2347,15 @@ int main(int argc, char *argv[])
 					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable];// *gain[i];
 
 					// 单卫星信号输出
+					/*
 					char cip = (char)ip;
 					char cqp = (char)qp;
 					fwrite(&cip, 1, 1, fpPrn[i]);
 					fwrite(&cqp, 1, 1, fpPrn[i]);
+					*/
+
+					iSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)ip;
+					qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)qp;
 
 					// Accumulate for all visible satellites					
 					i_acc += ip;
@@ -2358,8 +2415,51 @@ int main(int argc, char *argv[])
 			// I samples only
 
 			iq_buff[isamp*2] = (short)i_acc;
-			iq_buff[isamp*2+1] = (short)q_acc;
+			iq_buff[isamp*2+1] = (short)q_acc;		
+
 		}
+
+		// Farrow滤波器处理 目前就1个天线
+		memset(iSatBuffOut, 0, MAX_CHAN * satBuffSize * sizeof(double));
+		memset(qSatBuffOut, 0, MAX_CHAN * satBuffSize * sizeof(double));
+		for (i = 0; i < MAX_CHAN; i++)
+		{
+			if (chan[i].prn > 0)
+			{
+				double deltx = 0.095146836399182;
+				double delty = 0;
+				double deltz = 0;
+				double delt = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
+				delay = delt / SPEED_OF_LIGHT * iq_buff_size;
+
+				if (chan[i].prn > 20)
+					delay = 2e-5;
+				//delay = 1;
+
+				
+				farrowFilter(delay, satBuffSize, &iSatBuff[i*satBuffSize], &iSatBuffOut[i*satBuffSize]);
+				farrowFilter(delay, satBuffSize, &qSatBuff[i*satBuffSize], &qSatBuffOut[i*satBuffSize]);
+
+			}
+		}
+
+		// 所有通道合成一个天线信号
+		memset(iAntBuff, 0, iq_buff_size * sizeof(int));
+		memset(qAntBuff, 0, iq_buff_size * sizeof(int));
+		for (j = 0; j < iq_buff_size; j++)	
+		{
+			for (i = 0; i < MAX_CHAN; i++)
+			{
+				iAntBuff[j] += (int)(round(iSatBuffOut[i * satBuffSize + j + 2 * PRE_SAMPLES])); // 5是Farrow滤波器的固定群延时，与delay无关
+				qAntBuff[j] += (int)(round(qSatBuffOut[i * satBuffSize + j + 2 * PRE_SAMPLES]));
+				
+			}
+			iAntBuff[j] = (iAntBuff[j] + 64) >> 7;//保持与参考天线的相同处理方式
+			qAntBuff[j] = (qAntBuff[j] + 64) >> 7;
+			iqAntbuff[j * 2] = (short)iAntBuff[j];
+			iqAntbuff[j * 2 + 1] = (short)qAntBuff[j];
+		}
+
 
 		if (data_format==SC01)
 		{
@@ -2379,6 +2479,21 @@ int main(int argc, char *argv[])
 				iq8_buff[isamp] = iq_buff[isamp]; // 12-bit bladeRF -> 8-bit HackRF
 
 			fwrite(iq8_buff, 1, 2*iq_buff_size, fp);
+
+			// 存储ant2的数据
+			for (isamp = 0; isamp < 2 * iq_buff_size; isamp++)
+				iq8_buff[isamp] = iqAntbuff[isamp]; // 12-bit bladeRF -> 8-bit HackRF
+
+
+			if (iumd == 1)
+			{
+				fwrite(&iq8_buff[10], 1, 2 * iq_buff_size - 10, fpAnt2);
+			}
+			else
+			{
+				fwrite(iq8_buff, 1, 2 * iq_buff_size, fpAnt2);
+			}
+			
 		} 
 		else // data_format==SC16
 		{
@@ -2459,12 +2574,12 @@ int main(int argc, char *argv[])
 
 	// Close file
 	fclose(fp);
-
+/*
 	for (int fpCnt = 0; fpCnt < MAX_CHAN; fpCnt++)
 	{
 		fclose(fpPrn[fpCnt]);
 	}
-
+*/
 	// Process time
 	fprintf(stderr, "Process time = %.1f [sec]\n", (double)(tend-tstart)/CLOCKS_PER_SEC);
 

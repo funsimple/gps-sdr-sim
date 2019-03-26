@@ -1,7 +1,7 @@
 #ifndef UNITTEST_H
 #define UNITTEST_H
 
-#define UNITTEST 1
+#define UNITTEST 0
 
 void testFilter();
 

@@ -35,14 +35,53 @@ void testFarrowCoe()
 
 void testFarrowFilter()
 {
-	double x[20] = { 0.2, 0.3, 1.2, 12, 13, 123, 1.21, 234, 21, 2, 1, 34, 123, 44, 12, 41, 55, 23, 135, 125};
-	double y[20] = { 0 };
+	double x[1000] = { 0 };
+	double y[50] = { 0 };
 
-	farrowFilter(-1, 20, x, y);
-	for (int i = 0; i < 20; i++)
+	for (int i = 0; i < 1000; i++)
 	{
-		printf("%f ", y[i]);
+		x[i] = i;// (i % 2) * 2 - 1;
 	}
+
+	for (int i = 5; i < 50; i++)
+	{
+		memset(y, 0, 50 * sizeof(double));
+		if (i == 49)
+		{
+			farrowFilter(1, 50, &x[i * 20 - 30], y);
+		}
+		
+
+		for (int j = 0; j < 20; j++)
+		{
+			printf("%f ", x[i * 20 + j - 30]);
+		}
+		printf("\n ");
+		if (i == 1)
+		{
+			for (int j = 0; j < 15; j++)
+			{
+				printf("%f ", y[j + 10 + 5]);
+			}
+		}
+		else
+		{
+			for (int j = 0; j < 20; j++)
+			{
+				/*if (j == 5)
+				{
+					printf("\n ");
+				}*/
+					
+				printf("%f ", y[j+10]);
+			}
+			printf("\n ");
+		}
+		
+		
+	}
+	
+	printf("\n ");
 
 }
 #if UNITTEST == 1

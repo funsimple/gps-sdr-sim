@@ -187,6 +187,7 @@ typedef struct
 } channel_t;
 
 
+#define PRE_SAMPLES 50
 void filter(double *b, int len, double *x, double*y);
 void farrowFilter(double delay, int len, double *x, double *delaySignal);
 
