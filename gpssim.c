@@ -1350,7 +1350,7 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	// Carrier and code frequency.
 	chan->f_carr = -rhorate / LAMBDA_L1;
 	chan->f_code = CODE_FREQ + chan->f_carr*CARR_TO_CODE;
-	chan->f_carr += 1e6;
+	//chan->f_carr += 1e6;
 
 	// Initial code phase and data bit counters.
 	ms = ((subGpsTime(chan->rho0.g,chan->g0)+6.0) - chan->rho0.range/SPEED_OF_LIGHT)*1000.0;
@@ -2436,13 +2436,27 @@ int main(int argc, char *argv[])
 
 				
 
-				delay *= 2.5;
+				//delay *= 2.5;
 
 				//if (chan[i].prn > 20)
 				//	delay = 0.3;
 				//delay = 0.01;
 				farrowFilter(delay, satBuffSize, &iSatBuff[i*satBuffSize], &iSatBuffOut[i*satBuffSize]);
 				farrowFilter(delay, satBuffSize, &qSatBuff[i*satBuffSize], &qSatBuffOut[i*satBuffSize]);
+
+				double cosdelt;
+				double sindelt;
+
+				cosdelt = cos(2 * PI*chan[i].f_carr*delt_pos / SPEED_OF_LIGHT);
+				sindelt = sin(2 * PI*chan[i].f_carr*delt_pos / SPEED_OF_LIGHT);
+
+				double temp;
+				for (j = 0; j < satBuffSize; j++)
+				{
+					temp = iSatBuffOut[i*satBuffSize + j] * cosdelt + qSatBuffOut[i*satBuffSize + j] * sindelt;
+					qSatBuffOut[i*satBuffSize + j] = qSatBuffOut[i*satBuffSize + j] * cosdelt - iSatBuffOut[i*satBuffSize + j] * sindelt;
+					iSatBuffOut[i*satBuffSize + j] = temp;
+				}
 
 			}
 		}
