@@ -87,7 +87,13 @@ void testFarrowFilter()
 #if UNITTEST == 1
 void main(int argc, char *argv[])
 {
-	testFarrowFilter();
+	//testFarrowFilter();
+	double a;
+	a = cos(PI/2);
+	printf("%f ", a);
+	a = cos(PI);
+	printf("%f ", a);
+
 
 }
 #endif

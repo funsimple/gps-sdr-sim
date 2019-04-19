@@ -1350,7 +1350,7 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	// Carrier and code frequency.
 	chan->f_carr = -rhorate / LAMBDA_L1;
 	chan->f_code = CODE_FREQ + chan->f_carr*CARR_TO_CODE;
-	//chan->f_carr += 45.42e6;
+	chan->f_carr += 1e6;
 
 	// Initial code phase and data bit counters.
 	ms = ((subGpsTime(chan->rho0.g,chan->g0)+6.0) - chan->rho0.range/SPEED_OF_LIGHT)*1000.0;
@@ -2345,6 +2345,8 @@ int main(int argc, char *argv[])
 #endif
 					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable];// *gain[i];
 					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable];// *gain[i];
+					//ip = cosTable512[iTable];// *gain[i];
+					//qp = sinTable512[iTable];// *gain[i];
 
 					// 单卫星信号输出
 					/*
@@ -2409,8 +2411,8 @@ int main(int argc, char *argv[])
 			}
 
 			// Scaled by 2^7
-			i_acc = (i_acc+64)>>7;
-			q_acc = (q_acc+64)>>7;
+			i_acc = (i_acc+16)>>5; //+64等同于将
+			q_acc = (q_acc+16)>>5;
 
 			// I samples only
 
@@ -2426,17 +2428,19 @@ int main(int argc, char *argv[])
 		{
 			if (chan[i].prn > 0)
 			{
-				double deltx = 0.095146836399182;
+				double deltx = 10; //0.095146836399182;
 				double delty = 0;
 				double deltz = 0;
-				double delt = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
-				delay = delt / SPEED_OF_LIGHT * iq_buff_size;
-
-				if (chan[i].prn > 20)
-					delay = 2e-5;
-				//delay = 1;
+				double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
+				delay = delt_pos / SPEED_OF_LIGHT * samp_freq;
 
 				
+
+				delay *= 2.5;
+
+				//if (chan[i].prn > 20)
+				//	delay = 0.3;
+				//delay = 0.01;
 				farrowFilter(delay, satBuffSize, &iSatBuff[i*satBuffSize], &iSatBuffOut[i*satBuffSize]);
 				farrowFilter(delay, satBuffSize, &qSatBuff[i*satBuffSize], &qSatBuffOut[i*satBuffSize]);
 
@@ -2454,8 +2458,8 @@ int main(int argc, char *argv[])
 				qAntBuff[j] += (int)(round(qSatBuffOut[i * satBuffSize + j + 2 * PRE_SAMPLES]));
 				
 			}
-			iAntBuff[j] = (iAntBuff[j] + 64) >> 7;//保持与参考天线的相同处理方式
-			qAntBuff[j] = (qAntBuff[j] + 64) >> 7;
+			iAntBuff[j] = (iAntBuff[j] + 16) >> 5;//保持与参考天线的相同处理方式
+			qAntBuff[j] = (qAntBuff[j] + 16) >> 5;
 			iqAntbuff[j * 2] = (short)iAntBuff[j];
 			iqAntbuff[j * 2 + 1] = (short)qAntBuff[j];
 		}
