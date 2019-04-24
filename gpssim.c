@@ -2356,8 +2356,14 @@ int main(int argc, char *argv[])
 					fwrite(&cqp, 1, 1, fpPrn[i]);
 					*/
 
-					iSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)ip;
-					qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)qp;
+					//iSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)ip;
+					//qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)qp;
+
+					// i路存基带信号 q路存载波相位
+					iSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = chan[i].dataBit * chan[i].codeCA;
+					qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = chan[i].carr_phase;
+
+					
 
 					// Accumulate for all visible satellites					
 					i_acc += ip;
@@ -2434,17 +2440,31 @@ int main(int argc, char *argv[])
 				double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
 				delay = delt_pos / SPEED_OF_LIGHT * samp_freq;
 
-				
-
+				//delay = delay * 1.56;
+				double temp;
 				//delay *= 2.5;
 
 				//if (chan[i].prn > 20)
 				//	delay = 0.3;
 				//delay = 0.01;
 				farrowFilter(delay, satBuffSize, &iSatBuff[i*satBuffSize], &iSatBuffOut[i*satBuffSize]);
-				farrowFilter(delay, satBuffSize, &qSatBuff[i*satBuffSize], &qSatBuffOut[i*satBuffSize]);
+				//farrowFilter(delay, satBuffSize, &qSatBuff[i*satBuffSize], &qSatBuffOut[i*satBuffSize]);
+				for (j = 0; j < satBuffSize; j++)
+				{
 
-				double cosdelt;
+					//qSatBuffOut[i*satBuffSize + j] = 256 * iSatBuff[i*satBuffSize + j] * sin(qSatBuff[i*satBuffSize + j] * 2 * PI - 2 * PI*(chan[i].f_carr + 1575.42e6)*(delt_pos / SPEED_OF_LIGHT ) - 2 * PI*(chan[i].f_carr)*(5 * 1 / samp_freq));
+					//iSatBuffOut[i*satBuffSize + j] = 256 * iSatBuff[i*satBuffSize + j] * cos(qSatBuff[i*satBuffSize + j] * 2 * PI - 2 * PI*(chan[i].f_carr + 1575.42e6)*(delt_pos / SPEED_OF_LIGHT ) - 2 * PI*(chan[i].f_carr)*(5 * 1 / samp_freq));
+					//qSatBuffOut[i*satBuffSize + j] = temp;
+
+
+					qSatBuffOut[i*satBuffSize + j] = 256 * round(iSatBuffOut[i*satBuffSize + j]) * sin(qSatBuff[i*satBuffSize + j] * 2 * PI);
+					iSatBuffOut[i*satBuffSize + j] = 256 * round(iSatBuffOut[i*satBuffSize + j]) * cos(qSatBuff[i*satBuffSize + j] * 2 * PI);
+
+				}
+
+
+
+				/*double cosdelt;
 				double sindelt;
 
 				cosdelt = cos(2 * PI*chan[i].f_carr*delt_pos / SPEED_OF_LIGHT);
@@ -2456,7 +2476,7 @@ int main(int argc, char *argv[])
 					temp = iSatBuffOut[i*satBuffSize + j] * cosdelt + qSatBuffOut[i*satBuffSize + j] * sindelt;
 					qSatBuffOut[i*satBuffSize + j] = qSatBuffOut[i*satBuffSize + j] * cosdelt - iSatBuffOut[i*satBuffSize + j] * sindelt;
 					iSatBuffOut[i*satBuffSize + j] = temp;
-				}
+				}*/
 
 			}
 		}

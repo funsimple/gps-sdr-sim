@@ -89,7 +89,7 @@ void main(int argc, char *argv[])
 {
 	//testFarrowFilter();
 	double a;
-	a = cos(PI/2);
+	a = cos(PI/2*24);
 	printf("%f ", a);
 	a = cos(PI);
 	printf("%f ", a);
