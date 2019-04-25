@@ -1776,6 +1776,7 @@ int main(int argc, char *argv[])
 	int ip,qp;
 	int iTable;
 	short *iq_buff = NULL;
+	short *iq_buff_ant = NULL;
 	signed char *iq8_buff = NULL;
 
 	gpstime_t grx;
@@ -2154,7 +2155,7 @@ int main(int argc, char *argv[])
 
 	// Allocate I/Q buffer
 	iq_buff = calloc(2*iq_buff_size, sizeof(short));
-
+	iq_buff_ant = calloc(2 * iq_buff_size, sizeof(short));
 	// 每颗卫星的每100ms的数据buffer
 	int satBuffSize = iq_buff_size + 2 * PRE_SAMPLES;
 	double *iSatBuff = NULL;
@@ -2300,8 +2301,23 @@ int main(int argc, char *argv[])
 				chan[i].azel[0] = rho.azel[0];
 				chan[i].azel[1] = rho.azel[1];
 
+				double deltx = 10; //0.095146836399182;
+				double delty = 0;
+				double deltz = 0;
+				double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
+				chan[i].ant[0].delay = delt_pos / SPEED_OF_LIGHT;
+
+
 				// Update code phase and data bit counters
 				computeCodePhase(&chan[i], rho, 0.1);
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+
+
 #ifndef FLOAT_CARR_PHASE
 				chan[i].carr_phasestep = (int)round(512.0 * 65536.0 * chan[i].f_carr * delt);
 #endif
@@ -2317,6 +2333,7 @@ int main(int argc, char *argv[])
 			}
 		}
 
+#ifdef FARROW
 		// 将上1ms的最后2 * PRE_SAMPLES个采样点移至最左边
 		for (i = 0; i < MAX_CHAN; i++)
 		{
@@ -2326,7 +2343,7 @@ int main(int argc, char *argv[])
 				qSatBuff[i * satBuffSize + j] = qSatBuff[i * satBuffSize + j + iq_buff_size];
 			}
 		}
-
+#endif // FARROW
 
 
 		for (isamp=0; isamp<iq_buff_size; isamp++)
@@ -2340,11 +2357,16 @@ int main(int argc, char *argv[])
 				{
 #ifdef FLOAT_CARR_PHASE
 					iTable = (int)floor(chan[i].carr_phase*512.0);
+					chan[i].ant[0].iTable = (int)floor(chan[i].ant[0].carr_phase*512.0);
 #else
 					iTable = (chan[i].carr_phase >> 16) & 0x1ff; // 9-bit index
 #endif
 					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable];// *gain[i];
 					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable];// *gain[i];
+
+					chan[i].ant[0].ip = chan[i].ant[0].dataBit * chan[i].ant[0].codeCA * cosTable512[chan[i].ant[0].iTable];// *gain[i];
+					chan[i].ant[0].qp = chan[i].ant[0].dataBit * chan[i].ant[0].codeCA * sinTable512[chan[i].ant[0].iTable];// *gain[i];
+
 					//ip = cosTable512[iTable];// *gain[i];
 					//qp = sinTable512[iTable];// *gain[i];
 
@@ -2360,17 +2382,22 @@ int main(int argc, char *argv[])
 					//qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = (double)qp;
 
 					// i路存基带信号 q路存载波相位
+
+#ifdef FARROW
 					iSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = chan[i].dataBit * chan[i].codeCA;
 					qSatBuff[i * satBuffSize + isamp + 2 * PRE_SAMPLES] = chan[i].carr_phase;
-
+#endif
 					
 
 					// Accumulate for all visible satellites					
 					i_acc += ip;
 					q_acc += qp;
 
+					chan[i].ant[0].i_acc += chan[i].ant[0].ip;
+					chan[i].ant[0].q_acc += chan[i].ant[0].qp;
 					// Update code phase
 					chan[i].code_phase += chan[i].f_code * delt;
+					chan[i].ant[0].code_phase += chan[i].f_code * delt;
 
 					if (chan[i].code_phase>=CA_SEQ_LEN)
 					{
@@ -2398,12 +2425,36 @@ int main(int argc, char *argv[])
 						}
 					}
 
+					if (chan[i].ant[0].code_phase >= CA_SEQ_LEN)
+					{
+						chan[i].ant[0].code_phase -= CA_SEQ_LEN;
+
+						chan[i].ant[0].icode++;
+
+						if (chan[i].ant[0].icode >= 20) // 20 C/A codes = 1 navigation data bit
+						{
+							chan[i].ant[0].icode = 0;
+							chan[i].ant[0].ibit++;
+
+							if (chan[i].ant[0].ibit >= 30) // 30 navigation data bits = 1 word
+							{
+								chan[i].ant[0].ibit = 0;
+								chan[i].ant[0].iword++;
+							}
+
+							// Set new navigation data bit
+							chan[i].ant[0].dataBit = (int)((chan[i].dwrd[chan[i].ant[0].iword] >> (29 - chan[i].ant[0].ibit)) & 0x1UL) * 2 - 1;
+						}
+					}
+
 					// Set currnt code chip
 					chan[i].codeCA = chan[i].ca[(int)chan[i].code_phase]*2-1;
+					chan[i].ant[0].codeCA = chan[i].ca[(int)chan[i].code_phase] * 2 - 1;
 
 					// Update carrier phase
 #ifdef FLOAT_CARR_PHASE
 					chan[i].carr_phase += chan[i].f_carr * delt;
+					chan[i].ant[0].carr_phase += chan[i].f_carr * delt;
 
 					// 仅取小数部分，0~1，后续修改成模
 					while (chan[i].carr_phase >= 1.0)
@@ -2420,12 +2471,22 @@ int main(int argc, char *argv[])
 			i_acc = (i_acc+16)>>5; //+64等同于将
 			q_acc = (q_acc+16)>>5;
 
+			chan[i].ant[0].i_acc = (chan[i].ant[0].i_acc + 16) >> 5; //+64等同于将
+			chan[i].ant[0].q_acc = (chan[i].ant[0].q_acc + 16) >> 5;
+
 			// I samples only
 
 			iq_buff[isamp*2] = (short)i_acc;
-			iq_buff[isamp*2+1] = (short)q_acc;		
+			iq_buff[isamp*2+1] = (short)q_acc;
+
+			iq_buff_ant[isamp * 2] = (short)chan[i].ant[0].i_acc;
+			iq_buff_ant[isamp * 2 + 1] = (short)chan[i].ant[0].q_acc;
 
 		}
+
+#ifdef FARROW
+
+
 
 		// Farrow滤波器处理 目前就1个天线
 		memset(iSatBuffOut, 0, MAX_CHAN * satBuffSize * sizeof(double));
@@ -2497,7 +2558,7 @@ int main(int argc, char *argv[])
 			iqAntbuff[j * 2] = (short)iAntBuff[j];
 			iqAntbuff[j * 2 + 1] = (short)qAntBuff[j];
 		}
-
+#endif // FARROW
 
 		if (data_format==SC01)
 		{
@@ -2518,6 +2579,12 @@ int main(int argc, char *argv[])
 
 			fwrite(iq8_buff, 1, 2*iq_buff_size, fp);
 
+			for (isamp = 0; isamp < 2 * iq_buff_size; isamp++)
+				iq8_buff[isamp] = iq_buff_ant[isamp]; // 12-bit bladeRF -> 8-bit HackRF
+
+			fwrite(iq8_buff, 1, 2 * iq_buff_size, fpAnt2);
+
+#ifdef FARROW
 			// 存储ant2的数据
 			for (isamp = 0; isamp < 2 * iq_buff_size; isamp++)
 				iq8_buff[isamp] = iqAntbuff[isamp]; // 12-bit bladeRF -> 8-bit HackRF
@@ -2531,7 +2598,7 @@ int main(int argc, char *argv[])
 			{
 				fwrite(iq8_buff, 1, 2 * iq_buff_size, fpAnt2);
 			}
-			
+#endif // FARROW
 		} 
 		else // data_format==SC16
 		{
@@ -2609,7 +2676,7 @@ int main(int argc, char *argv[])
 
 	// Free I/Q buffer
 	free(iq_buff);
-
+	free(iq_buff_ant);
 	// Close file
 	fclose(fp);
 /*

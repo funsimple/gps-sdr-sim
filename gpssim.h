@@ -160,6 +160,24 @@ typedef struct
 	double iono_delay;
 } range_t;
 
+typedef struct
+{
+	double delay;
+	int iTable;
+	double carr_phase;
+	int ip;
+	int qp;
+	int dataBit;
+	int codeCA;
+	int i_acc;
+	int q_acc;
+	double code_phase;
+	int icode;
+	int ibit;
+	int iword;	/*!< initial word */
+}antenna_t;
+
+
 /*! \brief Structure representing a Channel */
 typedef struct
 {
@@ -184,6 +202,8 @@ typedef struct
 	int codeCA;	/*!< current C/A code */
 	double azel[2];
 	range_t rho0;
+	antenna_t	ant[8];
+
 } channel_t;
 
 
