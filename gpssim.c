@@ -1369,6 +1369,7 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	chan->codeCA = chan->ca[(int)chan->code_phase]*2-1;
 	chan->dataBit = (int)((chan->dwrd[chan->iword]>>(29-chan->ibit)) & 0x1UL)*2-1;
 
+
 	// Save current pseudorange
 	chan->rho0 = rho1;
 
@@ -1644,7 +1645,17 @@ int allocateChannel(channel_t *chan, ephem_t *eph, ionoutc_t ionoutc, gpstime_t 
 
 						phase_ini = (2.0*r_ref - r_xyz)/LAMBDA_L1;
 #ifdef FLOAT_CARR_PHASE
+
+						double deltx = 0.095146836399182; //0.095146836399182;
+						double delty = 0;
+						double deltz = 0;
+						double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
+						chan[i].ant[0].delay = delt_pos / SPEED_OF_LIGHT;
+
 						chan[i].carr_phase = phase_ini - floor(phase_ini);
+
+						chan[i].ant[0].carr_phase = chan[i].carr_phase + chan[i].ant[0].delay * 1575.42e6;
+						chan[i].ant[0].carr_phase -= floor(chan[i].ant[0].carr_phase);
 #else
 						phase_ini -= floor(phase_ini);
 						chan[i].carr_phase = (unsigned int)(512.0 * 65536.0 * phase_ini);
@@ -2301,7 +2312,7 @@ int main(int argc, char *argv[])
 				chan[i].azel[0] = rho.azel[0];
 				chan[i].azel[1] = rho.azel[1];
 
-				double deltx = 10; //0.095146836399182;
+				double deltx = 0.095146836399182; //0.095146836399182;
 				double delty = 0;
 				double deltz = 0;
 				double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
@@ -2310,12 +2321,14 @@ int main(int argc, char *argv[])
 
 				// Update code phase and data bit counters
 				computeCodePhase(&chan[i], rho, 0.1);
+
+				chan[i].ant[0].code_phase = chan[i].code_phase + chan[i].ant[0].delay * CA_SEQ_LEN * 1000.0;
+				chan[i].ant[0].codeCA = chan->ca[(int)chan[i].ant[0].code_phase] * 2 - 1;
+
+				
+
 				chan[i].ant[0].carr_phase = chan[i].carr_phase;
-				chan[i].ant[0].carr_phase = chan[i].carr_phase;
-				chan[i].ant[0].carr_phase = chan[i].carr_phase;
-				chan[i].ant[0].carr_phase = chan[i].carr_phase;
-				chan[i].ant[0].carr_phase = chan[i].carr_phase;
-				chan[i].ant[0].carr_phase = chan[i].carr_phase;
+				
 
 
 #ifndef FLOAT_CARR_PHASE
@@ -2350,6 +2363,9 @@ int main(int argc, char *argv[])
 		{
 			int i_acc = 0;
 			int q_acc = 0;
+			int i_acc_ant = 0;
+			int q_acc_ant = 0;
+
 
 			for (i=0; i<MAX_CHAN; i++)
 			{
@@ -2364,8 +2380,10 @@ int main(int argc, char *argv[])
 					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable];// *gain[i];
 					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable];// *gain[i];
 
-					chan[i].ant[0].ip = chan[i].ant[0].dataBit * chan[i].ant[0].codeCA * cosTable512[chan[i].ant[0].iTable];// *gain[i];
-					chan[i].ant[0].qp = chan[i].ant[0].dataBit * chan[i].ant[0].codeCA * sinTable512[chan[i].ant[0].iTable];// *gain[i];
+					chan[i].ant[0].ip = chan[i].dataBit *
+						chan[i].ant[0].codeCA * cosTable512[chan[i].ant[0].iTable];// *gain[i];
+					chan[i].ant[0].qp = chan[i].dataBit * 
+						chan[i].ant[0].codeCA * sinTable512[chan[i].ant[0].iTable];// *gain[i];
 
 					//ip = cosTable512[iTable];// *gain[i];
 					//qp = sinTable512[iTable];// *gain[i];
@@ -2393,8 +2411,8 @@ int main(int argc, char *argv[])
 					i_acc += ip;
 					q_acc += qp;
 
-					chan[i].ant[0].i_acc += chan[i].ant[0].ip;
-					chan[i].ant[0].q_acc += chan[i].ant[0].qp;
+					i_acc_ant += chan[i].ant[0].ip;
+					q_acc_ant += chan[i].ant[0].qp;
 					// Update code phase
 					chan[i].code_phase += chan[i].f_code * delt;
 					chan[i].ant[0].code_phase += chan[i].f_code * delt;
@@ -2449,7 +2467,7 @@ int main(int argc, char *argv[])
 
 					// Set currnt code chip
 					chan[i].codeCA = chan[i].ca[(int)chan[i].code_phase]*2-1;
-					chan[i].ant[0].codeCA = chan[i].ca[(int)chan[i].code_phase] * 2 - 1;
+					chan[i].ant[0].codeCA = chan[i].ca[(int)chan[i].ant[0].code_phase] * 2 - 1;
 
 					// Update carrier phase
 #ifdef FLOAT_CARR_PHASE
@@ -2461,6 +2479,11 @@ int main(int argc, char *argv[])
 						chan[i].carr_phase -= 1.0;
 					while (chan[i].carr_phase<0.0)
 						chan[i].carr_phase += 1.0;
+
+					while (chan[i].ant[0].carr_phase >= 1.0)
+						chan[i].ant[0].carr_phase -= 1.0;
+					while (chan[i].ant[0].carr_phase < 0.0)
+						chan[i].ant[0].carr_phase += 1.0;
 #else
 					chan[i].carr_phase += chan[i].carr_phasestep;
 #endif
@@ -2471,16 +2494,16 @@ int main(int argc, char *argv[])
 			i_acc = (i_acc+16)>>5; //+64等同于将
 			q_acc = (q_acc+16)>>5;
 
-			chan[i].ant[0].i_acc = (chan[i].ant[0].i_acc + 16) >> 5; //+64等同于将
-			chan[i].ant[0].q_acc = (chan[i].ant[0].q_acc + 16) >> 5;
+			i_acc_ant = (i_acc_ant + 16) >> 5; //+64等同于将
+			q_acc_ant = (q_acc_ant + 16) >> 5;
 
 			// I samples only
 
 			iq_buff[isamp*2] = (short)i_acc;
 			iq_buff[isamp*2+1] = (short)q_acc;
 
-			iq_buff_ant[isamp * 2] = (short)chan[i].ant[0].i_acc;
-			iq_buff_ant[isamp * 2 + 1] = (short)chan[i].ant[0].q_acc;
+			iq_buff_ant[isamp * 2] = (short)i_acc_ant;
+			iq_buff_ant[isamp * 2 + 1] = (short)q_acc_ant;
 
 		}
 
@@ -2495,7 +2518,7 @@ int main(int argc, char *argv[])
 		{
 			if (chan[i].prn > 0)
 			{
-				double deltx = 10; //0.095146836399182;
+				double deltx = 0.095146836399182; //0.095146836399182;
 				double delty = 0;
 				double deltz = 0;
 				double delt_pos = deltx * cos(chan[i].azel[0]) * cos(chan[i].azel[1]) + delty * sin(chan[i].azel[0]) * cos(chan[i].azel[1]) + deltz * sin(chan[i].azel[1]);
